@@ -730,36 +730,37 @@ function generatePalletSVG(){
     var ct=col,cs=darken(col,0.65),cf=darken(col,0.80);
 
     if(b.cyl){
-      // Cilindro isometrico: cerchio in cima + corpo laterale
-      // Centro in cima
+      // Cilindro isometrico — proiettiamo N punti del cerchio
       var cx=x0+lx/2, cz=z0+lz/2;
-      var r=lx/2; // raggio = meta diametro
-      // Proietta il centro e i bordi dell'ellisse
-      var cTop=isoOff(cx,y0+ly,cz);
-      var cBot=isoOff(cx,y0,cz);
-      // Assi ellisse proiettati: rx lungo X-Z, ry lungo Y
-      // In proiezione iso l'ellisse ha semi-assi: rx_screen e ry_screen
-      var rx_screen=r*sc*Math.sqrt(sx*sx+sy*sy);
-      var ry_screen=r*sc*sy;
-      // Corpo laterale: poligono approssimato
-      var steps=16;
+      var r=lx/2;
+      var steps=24;
       var topPts=[],botPts=[];
-      for(var i=0;i<=steps;i++){
-        var a=Math.PI*i/steps; // solo meta inferiore per il corpo
-        var ex=r*Math.cos(Math.PI+a), ez=r*Math.sin(Math.PI+a);
-        var tp=isoOff(cx+ex,y0+ly,cz+ez);
-        var bp=isoOff(cx+ex,y0,cz+ez);
-        topPts.push(tp);botPts.push(bp);
+      for(var i=0;i<steps;i++){
+        var a=(2*Math.PI*i)/steps;
+        var ex=r*Math.cos(a), ez=r*Math.sin(a);
+        topPts.push(isoOff(cx+ex,y0+ly,cz+ez));
+        botPts.push(isoOff(cx+ex,y0,cz+ez));
       }
-      // Corpo: poligono sinistra
-      var bodyL='<polygon points="';
-      topPts.forEach(function(p){bodyL+=p.x.toFixed(1)+','+p.y.toFixed(1)+' ';});
-      var botRev=botPts.slice().reverse();
-      botRev.forEach(function(p){bodyL+=p.x.toFixed(1)+','+p.y.toFixed(1)+' ';});
-      bodyL+='" fill="'+cf+'" stroke="rgba(0,0,0,0.12)" stroke-width="0.5" stroke-linejoin="round"/>';
-      // Ellisse in cima
-      var ellTop='<ellipse cx="'+cTop.x.toFixed(1)+'" cy="'+cTop.y.toFixed(1)+'" rx="'+rx_screen.toFixed(1)+'" ry="'+ry_screen.toFixed(1)+'" fill="'+ct+'" stroke="rgba(0,0,0,0.15)" stroke-width="0.5"/>';
-      return bodyL+ellTop;
+      // Trova i punti piu in basso (y max) per il corpo visibile
+      // Il corpo e' la parte "frontale" del cilindro
+      // Troviamo l'indice con y massima in cima
+      var maxYIdx=0;
+      topPts.forEach(function(p,i){if(p.y>topPts[maxYIdx].y)maxYIdx=i;});
+      // Corpo laterale: meta' frontale (da maxYIdx-steps/2 a maxYIdx+steps/2)
+      var half=Math.round(steps/2);
+      var bodyTop=[],bodyBot=[];
+      for(var i=-half;i<=half;i++){
+        var idx=(maxYIdx+i+steps)%steps;
+        bodyTop.push(topPts[idx]);
+        bodyBot.push(botPts[idx]);
+      }
+      var bodyPts=bodyTop.concat(bodyBot.slice().reverse());
+      var bodyStr=bodyPts.map(function(p){return p.x.toFixed(1)+','+p.y.toFixed(1);}).join(' ');
+      var body='<polygon points="'+bodyStr+'" fill="'+cf+'" stroke="rgba(0,0,0,0.12)" stroke-width="0.8" stroke-linejoin="round"/>';
+      // Cerchio in cima
+      var topStr=topPts.map(function(p){return p.x.toFixed(1)+','+p.y.toFixed(1);}).join(' ');
+      var top='<polygon points="'+topStr+'" fill="'+ct+'" stroke="rgba(0,0,0,0.15)" stroke-width="0.8" stroke-linejoin="round"/>';
+      return body+top;
     }
 
     return face([pt(x0,y0+ly,z0),pt(x0+lx,y0+ly,z0),pt(x0+lx,y0+ly,z0+lz),pt(x0,y0+ly,z0+lz)],ct,'rgba(0,0,0,0.15)')+
