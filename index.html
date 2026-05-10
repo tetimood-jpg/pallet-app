@@ -647,10 +647,13 @@ function addLay3d(){var id='l'+(lidN++);layers.unshift({id,name:'Nuovo livello',
 // GENERA SVG ISOMETRICO BANCALE
 // ══════════════════════════════
 function generatePalletSVG(){
-  // Usa ESATTAMENTE la stessa logica di rebuild3d — coordinate centrate su zero
-  var sc=0.55;
-  var sx=0.30, sy=0.15, sh=0.28;
+  // Proiezione obliqua cavaliera — semplice e chiara
+  // X = destra, Y = su, Z = profondità (obliqua a 30°, fattore 0.5)
   var PL2=PL3||1200, PW2=PW3||800;
+  var sc=0.50; // scala generale
+  var angle=Math.PI/6; // 30 gradi
+  var oblX=Math.cos(angle)*0.45; // componente X dell'asse Z
+  var oblY=Math.sin(angle)*0.45; // componente Y dell'asse Z (va su)
   var PAD=8;
 
   function darken(hex,f){
@@ -658,19 +661,20 @@ function generatePalletSVG(){
     return 'rgb('+Math.round(r*f)+','+Math.round(g*f)+','+Math.round(b*f)+')';
   }
 
-  // Stessa proiezione del renderer Three.js: x=lungo L, y=altezza, z=lungo W
-  // In Three.js: camera isometrica con theta=PI/4, phi=0.85
-  // Qui usiamo proiezione obliqua equivalente con coordinate centrate
-  function isoRaw(x,y,z){
-    // x e z sono centrati su 0 (come in Three.js)
-    return{x:(x-z)*sx, y:-(y*sh)+(x+z)*sy};
+  // Proiezione: x=lunghezza, y=altezza, z=profondità
+  function proj(x,y,z){
+    return {
+      px: x*sc + z*sc*oblX,
+      py: -(y*sc) - z*sc*oblY
+    };
   }
 
   function lerp2(a,b,t){return a+(b-a)*t;}
 
+  // Raccoglie tutti i box
   var boxes=[];
   var baseY=0;
-  var order=layers.slice().reverse(); // dal basso verso l'alto
+  var order=layers.slice().reverse();
 
   order.forEach(function(ld){
     var col=ld.color||'#e8c97a';
@@ -679,14 +683,14 @@ function generatePalletSVG(){
     if(ld.type==='block'){
       var cx2=Math.max(1,ld.cx||3), cz2=Math.max(1,ld.cz||3);
       var bw=ld.larg||145, bd=ld.shape==='cyl'?bw:(ld.d||145), bh=ld.sp||78;
-      // Stessa logica di rebuild3d per i blocchi
       var xs=cx2===1?[0]:[];
-      if(cx2>1){for(var xi=0;xi<cx2;xi++) xs.push(lerp2(-ll/2+bw/2,ll/2-bw/2,xi/(cx2-1)));}
+      if(cx2>1) for(var xi=0;xi<cx2;xi++) xs.push(lerp2(-ll/2+bw/2,ll/2-bw/2,xi/(cx2-1)));
+      else xs=[0];
       var zs=cz2===1?[0]:[];
-      if(cz2>1){for(var zi=0;zi<cz2;zi++) zs.push(lerp2(-lw/2+bd/2,lw/2-bd/2,zi/(cz2-1)));}
+      if(cz2>1) for(var zi=0;zi<cz2;zi++) zs.push(lerp2(-lw/2+bd/2,lw/2-bd/2,zi/(cz2-1)));
+      else zs=[0];
       xs.forEach(function(xp){
         zs.forEach(function(zp){
-          // centro del blocco -> angolo in basso a sinistra
           boxes.push({cx:xp,y0:baseY,cz:zp,lx:bw,ly:bh,lz:bd,col:col,cyl:ld.shape==='cyl'});
         });
       });
@@ -697,33 +701,35 @@ function generatePalletSVG(){
       var dirX=(ld.dir==='X');
       var span=dirX?lw:ll, run=dirX?ll:lw;
       pieces.forEach(function(p,i){
-        // Stessa formula di rebuild3d
         var ctr=N===1?0:lerp2(-span/2+p.larg/2,span/2-pieces[N-1].larg/2,i/(N-1));
-        var pcx=dirX?0:ctr;
-        var pcz=dirX?ctr:0;
-        var lx=dirX?run:p.larg;
-        var lz=dirX?p.larg:run;
+        var pcx=dirX?0:ctr, pcz=dirX?ctr:0;
+        var lx=dirX?run:p.larg, lz=dirX?p.larg:run;
         boxes.push({cx:pcx,y0:baseY,cz:pcz,lx:lx,ly:p.sp,lz:lz,col:col,cyl:false});
       });
       baseY+=maxSp;
     }
   });
 
-  // Calcola bounding box usando coordinate centrate
+  // Bounding box
   var allPX=[],allPY=[];
   boxes.forEach(function(b){
-    var x0=b.cx-b.lx/2, z0=b.cz-b.lz/2;
-    var x1=b.cx+b.lx/2, z1=b.cz+b.lz/2;
-    var pts=[[x0,b.y0,z0],[x1,b.y0,z0],[x0,b.y0+b.ly,z0],[x1,b.y0+b.ly,z0],
-             [x0,b.y0,z1],[x1,b.y0,z1],[x0,b.y0+b.ly,z1],[x1,b.y0+b.ly,z1]];
+    var x0=b.cx-b.lx/2, x1=b.cx+b.lx/2;
+    var z0=b.cz-b.lz/2, z1=b.cz+b.lz/2;
+    [[x0,b.y0,z0],[x1,b.y0,z0],[x0,b.y0+b.ly,z0],[x1,b.y0+b.ly,z0],
+     [x0,b.y0,z1],[x1,b.y0,z1],[x0,b.y0+b.ly,z1],[x1,b.y0+b.ly,z1]
+    ].forEach(function(v){
+      var p=proj(v[0],v[1],v[2]);
+      allPX.push(p.px);allPY.push(p.py);
+    });
     if(b.cyl){
-      var r2=b.lx/2;
-      for(var i=0;i<32;i++){var a2=2*Math.PI*i/32;
-        pts.push([b.cx+r2*Math.cos(a2),b.y0,b.cz+r2*Math.sin(a2)]);
-        pts.push([b.cx+r2*Math.cos(a2),b.y0+b.ly,b.cz+r2*Math.sin(a2)]);
+      var r=b.lx/2;
+      for(var i=0;i<16;i++){
+        var a=2*Math.PI*i/16;
+        [[b.cx+r*Math.cos(a),b.y0,b.cz+r*Math.sin(a)],
+         [b.cx+r*Math.cos(a),b.y0+b.ly,b.cz+r*Math.sin(a)]
+        ].forEach(function(v){var p=proj(v[0],v[1],v[2]);allPX.push(p.px);allPY.push(p.py);});
       }
     }
-    pts.forEach(function(v){var p=isoRaw(v[0],v[1],v[2]);allPX.push(p.x);allPY.push(p.y);});
   });
 
   var minX=Math.min.apply(null,allPX)-PAD;
@@ -732,63 +738,53 @@ function generatePalletSVG(){
   var maxY=Math.max.apply(null,allPY)+PAD;
   var vw=maxX-minX, vh=maxY-minY;
 
-  function isoOff(x,y,z){var r=isoRaw(x,y,z);return{x:r.x-minX,y:r.y-minY};}
-  function pt(x,y,z){var p=isoOff(x,y,z);return p.x.toFixed(1)+','+p.y.toFixed(1);}
-  function face(pts,fill,stroke){
-    return '<polygon points="'+pts.join(' ')+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1" stroke-linejoin="round"/>';
-  }
+  function p2(x,y,z){var r=proj(x,y,z);return (r.px-minX).toFixed(1)+','+(r.py-minY).toFixed(1);}
+
   function drawBox(b){
-    // usa coordinate centrate come Three.js
-    var x0=b.cx-b.lx/2, z0=b.cz-b.lz/2;
-    var x1=b.cx+b.lx/2, z1=b.cz+b.lz/2;
-    var lx=b.lx,ly=b.ly,lz=b.lz,col=b.col,y0=b.y0;
-    var ct=col,cs=darken(col,0.65),cf=darken(col,0.80);
+    var x0=b.cx-b.lx/2, x1=b.cx+b.lx/2;
+    var z0=b.cz-b.lz/2, z1=b.cz+b.lz/2;
+    var y0=b.y0, y1=b.y0+b.ly;
+    var col=b.col;
+    var ct=col, cs=darken(col,0.70), cf=darken(col,0.55);
 
     if(b.cyl){
-      var r=lx/2, steps=32;
-      var topPts=[],botPts=[];
+      var r=b.lx/2;
+      var steps=32;
+      // Cerchio frontale (z1 = davanti) in X-Y
+      var topF=[], botF=[];
+      // In obliqua: il cerchio diventa un'ellisse
+      // Asse X: raggio r, Asse Z: raggio r*oblX orizzontale, r*oblY verticale
+      // Usiamo poligono approssimato proiettando punti del cerchio
       for(var i=0;i<steps;i++){
-        var a=(2*Math.PI*i)/steps;
-        topPts.push(isoOff(b.cx+r*Math.cos(a), y0+ly, b.cz+r*Math.sin(a)));
-        botPts.push(isoOff(b.cx+r*Math.cos(a), y0,    b.cz+r*Math.sin(a)));
+        var a=2*Math.PI*i/steps;
+        topF.push(p2(b.cx+r*Math.cos(a), y1, b.cz+r*Math.sin(a)));
+        botF.push(p2(b.cx+r*Math.cos(a), y0, b.cz+r*Math.sin(a)));
       }
-      // Trova il punto con y minima (più in alto = posteriore) nella proiezione
-      var minYIdx=0;
-      topPts.forEach(function(p,i){ if(p.y<topPts[minYIdx].y) minYIdx=i; });
-      // Il corpo visibile è la metà FRONTALE = i steps/2 punti che partono da minYIdx
-      // e vanno in entrambe le direzioni fino al punto frontale
-      var half=Math.floor(steps/2);
-      var bodyTop=[], bodyBot=[];
-      for(var i=0; i<=half; i++){
-        var idx=(minYIdx+i)%steps;
-        bodyTop.push(topPts[idx]);
-        bodyBot.push(botPts[idx]);
-      }
-      // aggiungi l'altro lato
-      for(var i=1; i<half; i++){
-        var idx2=(minYIdx-i+steps)%steps;
-        bodyTop.unshift(topPts[idx2]);
-        bodyBot.unshift(botPts[idx2]);
-      }
-      var bodyPts=bodyTop.concat(bodyBot.slice().reverse());
-      var bodyStr=bodyPts.map(function(p){return p.x.toFixed(1)+','+p.y.toFixed(1);}).join(' ');
-      var topStr=topPts.map(function(p){return p.x.toFixed(1)+','+p.y.toFixed(1);}).join(' ');
-      return '<polygon points="'+bodyStr+'" fill="'+cf+'" stroke="rgba(0,0,0,0.12)" stroke-width="0.8" stroke-linejoin="round"/>'+
-             '<polygon points="'+topStr+'" fill="'+ct+'" stroke="rgba(0,0,0,0.15)" stroke-width="0.8" stroke-linejoin="round"/>';
+      // Corpo: usa i 4 punti tangenti (sinistra e destra)
+      var leftTop=p2(x0, y1, b.cz);
+      var rightTop=p2(x1, y1, b.cz);
+      var leftBot=p2(x0, y0, b.cz);
+      var rightBot=p2(x1, y0, b.cz);
+      var body='<polygon points="'+leftTop+' '+rightTop+' '+rightBot+' '+leftBot+'" fill="'+cf+'" stroke="rgba(0,0,0,0.15)" stroke-width="1"/>';
+      var topCirc='<polygon points="'+topF.join(' ')+'" fill="'+ct+'" stroke="rgba(0,0,0,0.15)" stroke-width="1"/>';
+      var botCirc='<polygon points="'+botF.join(' ')+'" fill="'+darken(col,0.45)+'" stroke="rgba(0,0,0,0.1)" stroke-width="0.5"/>';
+      return botCirc+body+topCirc;
     }
 
-    return face([pt(x0,y0+ly,z0),pt(x1,y0+ly,z0),pt(x1,y0+ly,z1),pt(x0,y0+ly,z1)],ct,'rgba(0,0,0,0.15)')+
-           face([pt(x0,y0,z1),pt(x1,y0,z1),pt(x1,y0+ly,z1),pt(x0,y0+ly,z1)],cf,'rgba(0,0,0,0.12)')+
-           face([pt(x1,y0,z0),pt(x1,y0,z1),pt(x1,y0+ly,z1),pt(x1,y0+ly,z0)],cs,'rgba(0,0,0,0.1)');
+    // Box normale — 3 facce visibili
+    // Faccia frontale (z1)
+    var front='<polygon points="'+p2(x0,y0,z1)+' '+p2(x1,y0,z1)+' '+p2(x1,y1,z1)+' '+p2(x0,y1,z1)+'" fill="'+ct+'" stroke="rgba(0,0,0,0.15)" stroke-width="1"/>';
+    // Faccia superiore
+    var top='<polygon points="'+p2(x0,y1,z0)+' '+p2(x1,y1,z0)+' '+p2(x1,y1,z1)+' '+p2(x0,y1,z1)+'" fill="'+darken(col,0.85)+'" stroke="rgba(0,0,0,0.15)" stroke-width="1"/>';
+    // Faccia laterale destra (x1)
+    var side='<polygon points="'+p2(x1,y0,z0)+' '+p2(x1,y0,z1)+' '+p2(x1,y1,z1)+' '+p2(x1,y1,z0)+'" fill="'+cs+'" stroke="rgba(0,0,0,0.15)" stroke-width="1"/>';
+    return front+side+top;
   }
 
-  var svgParts=boxes.map(function(b){return drawBox(b);});
-
+  var parts=boxes.map(function(b){return drawBox(b);});
   return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+vw.toFixed(1)+' '+vh.toFixed(1)+'" style="display:block;width:100%;height:auto;background:transparent;">'+
-    svgParts.join('')+
-  '</svg>';
+    parts.join('')+'</svg>';
 }
-
 
 function generatePDF3d(){
   var nome=document.getElementById('nome').value||'Bancale';
