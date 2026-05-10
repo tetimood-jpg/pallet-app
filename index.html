@@ -647,28 +647,30 @@ function addLay3d(){var id='l'+(lidN++);layers.unshift({id,name:'Nuovo livello',
 // GENERA SVG ISOMETRICO BANCALE
 // ══════════════════════════════
 function generatePalletSVG(){
-  // Legge i dati REALI dai layers — bounding box automatico, zero margini bianchi
-  var sc=0.62;
-  var sx=0.32, sy=0.16, sh=0.32;
+  // Usa ESATTAMENTE la stessa logica di rebuild3d — coordinate centrate su zero
+  var sc=0.55;
+  var sx=0.30, sy=0.15, sh=0.28;
   var PL2=PL3||1200, PW2=PW3||800;
-  var PAD=6; // padding minimo attorno al bancale
+  var PAD=8;
 
   function darken(hex,f){
     var r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
     return 'rgb('+Math.round(r*f)+','+Math.round(g*f)+','+Math.round(b*f)+')';
   }
 
-  // proiezione senza offset — calcoliamo il bounding box prima
+  // Stessa proiezione del renderer Three.js: x=lungo L, y=altezza, z=lungo W
+  // In Three.js: camera isometrica con theta=PI/4, phi=0.85
+  // Qui usiamo proiezione obliqua equivalente con coordinate centrate
   function isoRaw(x,y,z){
-    return{x:(x*sc-z*sc)*sx, y:-(y*sc*sh)+(x*sc+z*sc)*sy};
+    // x e z sono centrati su 0 (come in Three.js)
+    return{x:(x-z)*sx, y:-(y*sh)+(x+z)*sy};
   }
 
   function lerp2(a,b,t){return a+(b-a)*t;}
 
-  // Raccoglie tutti i box da disegnare
   var boxes=[];
   var baseY=0;
-  var order=layers.slice().reverse();
+  var order=layers.slice().reverse(); // dal basso verso l'alto
 
   order.forEach(function(ld){
     var col=ld.color||'#e8c97a';
@@ -677,13 +679,17 @@ function generatePalletSVG(){
     if(ld.type==='block'){
       var cx2=Math.max(1,ld.cx||3), cz2=Math.max(1,ld.cz||3);
       var bw=ld.larg||145, bd=ld.shape==='cyl'?bw:(ld.d||145), bh=ld.sp||78;
-      for(var xi=0;xi<cx2;xi++){
-        for(var zi=0;zi<cz2;zi++){
-          var bx=cx2===1?ll/2-bw/2:lerp2(0,ll-bw,xi/(cx2-1));
-          var bz=cz2===1?lw/2-bd/2:lerp2(0,lw-bd,zi/(cz2-1));
-          boxes.push({x0:bx,y0:baseY,z0:bz,lx:bw,ly:bh,lz:bd,col:col,cyl:ld.shape==='cyl'});
-        }
-      }
+      // Stessa logica di rebuild3d per i blocchi
+      var xs=cx2===1?[0]:[];
+      if(cx2>1){for(var xi=0;xi<cx2;xi++) xs.push(lerp2(-ll/2+bw/2,ll/2-bw/2,xi/(cx2-1)));}
+      var zs=cz2===1?[0]:[];
+      if(cz2>1){for(var zi=0;zi<cz2;zi++) zs.push(lerp2(-lw/2+bd/2,lw/2-bd/2,zi/(cz2-1)));}
+      xs.forEach(function(xp){
+        zs.forEach(function(zp){
+          // centro del blocco -> angolo in basso a sinistra
+          boxes.push({cx:xp,y0:baseY,cz:zp,lx:bw,ly:bh,lz:bd,col:col,cyl:ld.shape==='cyl'});
+        });
+      });
       baseY+=bh;
     } else {
       var pieces=getPieces3d(ld), N=pieces.length;
@@ -691,28 +697,30 @@ function generatePalletSVG(){
       var dirX=(ld.dir==='X');
       var span=dirX?lw:ll, run=dirX?ll:lw;
       pieces.forEach(function(p,i){
+        // Stessa formula di rebuild3d
         var ctr=N===1?0:lerp2(-span/2+p.larg/2,span/2-pieces[N-1].larg/2,i/(N-1));
-        var x0=dirX?0:ctr+span/2-p.larg/2;
-        var z0=dirX?ctr+span/2-p.larg/2:0;
+        var pcx=dirX?0:ctr;
+        var pcz=dirX?ctr:0;
         var lx=dirX?run:p.larg;
         var lz=dirX?p.larg:run;
-        boxes.push({x0:x0,y0:baseY,z0:z0,lx:lx,ly:p.sp,lz:lz,col:col});
+        boxes.push({cx:pcx,y0:baseY,cz:pcz,lx:lx,ly:p.sp,lz:lz,col:col,cyl:false});
       });
       baseY+=maxSp;
     }
   });
 
-  // Calcola bounding box di tutti i punti
+  // Calcola bounding box usando coordinate centrate
   var allPX=[],allPY=[];
   boxes.forEach(function(b){
-    var pts=[[b.x0,b.y0,b.z0],[b.x0+b.lx,b.y0,b.z0],[b.x0,b.y0+b.ly,b.z0],[b.x0+b.lx,b.y0+b.ly,b.z0],
-             [b.x0,b.y0,b.z0+b.lz],[b.x0+b.lx,b.y0,b.z0+b.lz],[b.x0,b.y0+b.ly,b.z0+b.lz],[b.x0+b.lx,b.y0+b.ly,b.z0+b.lz]];
+    var x0=b.cx-b.lx/2, z0=b.cz-b.lz/2;
+    var x1=b.cx+b.lx/2, z1=b.cz+b.lz/2;
+    var pts=[[x0,b.y0,z0],[x1,b.y0,z0],[x0,b.y0+b.ly,z0],[x1,b.y0+b.ly,z0],
+             [x0,b.y0,z1],[x1,b.y0,z1],[x0,b.y0+b.ly,z1],[x1,b.y0+b.ly,z1]];
     if(b.cyl){
-      // aggiungi tutti i punti del cerchio superiore e inferiore nel bounding box
-      var cx2=b.x0+b.lx/2,cz2=b.z0+b.lz/2,r2=b.lx/2;
+      var r2=b.lx/2;
       for(var i=0;i<32;i++){var a2=2*Math.PI*i/32;
-        pts.push([cx2+r2*Math.cos(a2),b.y0,cz2+r2*Math.sin(a2)]);
-        pts.push([cx2+r2*Math.cos(a2),b.y0+b.ly,cz2+r2*Math.sin(a2)]);
+        pts.push([b.cx+r2*Math.cos(a2),b.y0,b.cz+r2*Math.sin(a2)]);
+        pts.push([b.cx+r2*Math.cos(a2),b.y0+b.ly,b.cz+r2*Math.sin(a2)]);
       }
     }
     pts.forEach(function(v){var p=isoRaw(v[0],v[1],v[2]);allPX.push(p.x);allPY.push(p.y);});
@@ -724,26 +732,25 @@ function generatePalletSVG(){
   var maxY=Math.max.apply(null,allPY)+PAD;
   var vw=maxX-minX, vh=maxY-minY;
 
-  // Disegna con offset per centrare nel viewBox
-  function isoOff(x,y,z){
-    var r=isoRaw(x,y,z);
-    return{x:r.x-minX, y:r.y-minY};
-  }
+  function isoOff(x,y,z){var r=isoRaw(x,y,z);return{x:r.x-minX,y:r.y-minY};}
   function pt(x,y,z){var p=isoOff(x,y,z);return p.x.toFixed(1)+','+p.y.toFixed(1);}
   function face(pts,fill,stroke){
     return '<polygon points="'+pts.join(' ')+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1" stroke-linejoin="round"/>';
   }
   function drawBox(b){
-    var x0=b.x0,y0=b.y0,z0=b.z0,lx=b.lx,ly=b.ly,lz=b.lz,col=b.col;
+    // usa coordinate centrate come Three.js
+    var x0=b.cx-b.lx/2, z0=b.cz-b.lz/2;
+    var x1=b.cx+b.lx/2, z1=b.cz+b.lz/2;
+    var lx=b.lx,ly=b.ly,lz=b.lz,col=b.col,y0=b.y0;
     var ct=col,cs=darken(col,0.65),cf=darken(col,0.80);
 
     if(b.cyl){
-      var cx=x0+lx/2, cz=z0+lz/2, r=lx/2, steps=32;
+      var r=lx/2, steps=32;
       var topPts=[],botPts=[];
       for(var i=0;i<steps;i++){
         var a=(2*Math.PI*i)/steps;
-        topPts.push(isoOff(cx+r*Math.cos(a), y0+ly, cz+r*Math.sin(a)));
-        botPts.push(isoOff(cx+r*Math.cos(a), y0,    cz+r*Math.sin(a)));
+        topPts.push(isoOff(b.cx+r*Math.cos(a), y0+ly, b.cz+r*Math.sin(a)));
+        botPts.push(isoOff(b.cx+r*Math.cos(a), y0,    b.cz+r*Math.sin(a)));
       }
       // trova punto piu in basso (frontale) e piu in alto (posteriore)
       var frontIdx=0, backIdx=0;
@@ -775,9 +782,9 @@ function generatePalletSVG(){
              '<polygon points="'+topStr+'" fill="'+ct+'" stroke="rgba(0,0,0,0.15)" stroke-width="0.8" stroke-linejoin="round"/>';
     }
 
-    return face([pt(x0,y0+ly,z0),pt(x0+lx,y0+ly,z0),pt(x0+lx,y0+ly,z0+lz),pt(x0,y0+ly,z0+lz)],ct,'rgba(0,0,0,0.15)')+
-           face([pt(x0,y0,z0+lz),pt(x0+lx,y0,z0+lz),pt(x0+lx,y0+ly,z0+lz),pt(x0,y0+ly,z0+lz)],cf,'rgba(0,0,0,0.12)')+
-           face([pt(x0+lx,y0,z0),pt(x0+lx,y0,z0+lz),pt(x0+lx,y0+ly,z0+lz),pt(x0+lx,y0+ly,z0)],cs,'rgba(0,0,0,0.1)');
+    return face([pt(x0,y0+ly,z0),pt(x1,y0+ly,z0),pt(x1,y0+ly,z1),pt(x0,y0+ly,z1)],ct,'rgba(0,0,0,0.15)')+
+           face([pt(x0,y0,z1),pt(x1,y0,z1),pt(x1,y0+ly,z1),pt(x0,y0+ly,z1)],cf,'rgba(0,0,0,0.12)')+
+           face([pt(x1,y0,z0),pt(x1,y0,z1),pt(x1,y0+ly,z1),pt(x1,y0+ly,z0)],cs,'rgba(0,0,0,0.1)');
   }
 
   var svgParts=boxes.map(function(b){return drawBox(b);});
