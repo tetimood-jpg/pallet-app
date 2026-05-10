@@ -1,4 +1,4 @@
-const CACHE = 'pallet-v9';
+const CACHE = 'pallet-v11';
 const FILES = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', e => {

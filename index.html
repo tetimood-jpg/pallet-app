@@ -401,7 +401,7 @@ var PL3=1200, PW3=800;
 var selId='l1', soloOn=false, exploded=false, lidN=10;
 var layers=[
   {id:'l1',name:'1° — Tavole superiori',  type:'board',dir:'X',n:5, larg:75, sp:17,lw:800, ll:1200,adv:false,pieces:[],color:'#e8c97a'},
-  {id:'l2',name:'2° — Traverse / Morali', type:'board',dir:'Y',n:3, larg:75, sp:17,lw:1200,ll:800, adv:false,pieces:[],color:'#d4b860'},
+  {id:'l2',name:'2° — Traverse / Morali', type:'board',dir:'Y',n:3, larg:75, sp:17,lw:800, ll:1200,adv:false,pieces:[],color:'#d4b860'},
   {id:'l3',name:'3° — Blocchi / Tappi',   type:'block',dir:'X',n:0, larg:85, sp:85,lw:800, ll:1200,adv:false,pieces:[],color:'#a87830',d:85,cx:3,cz:3,shape:'cyl'},
   {id:'l4',name:'4° — Tavole inferiori',  type:'board',dir:'X',n:3, larg:75, sp:17,lw:800, ll:1200,adv:false,pieces:[],color:'#e0c060'},
 ];
@@ -414,13 +414,14 @@ var camTgt=new THREE.Vector3(0,150,0);
 var camAnim=null;
 
 if(typeof THREE!=='undefined'){
-  renderer3d=new THREE.WebGLRenderer({canvas:canvas3d,antialias:true,preserveDrawingBuffer:true});
+  renderer3d=new THREE.WebGLRenderer({canvas:canvas3d,antialias:true,preserveDrawingBuffer:true,alpha:true});
   renderer3d.setPixelRatio(Math.min(window.devicePixelRatio,2));
   renderer3d.setClearColor(0xe8e4de,1);
   renderer3d.shadowMap.enabled=true;
   scene3d=new THREE.Scene();
-  scene3d.background=new THREE.Color(0xe8e4de);
-  scene3d.fog=new THREE.Fog(0xe8e4de,5000,10000);
+  // sfondo trasparente per cattura PDF
+  scene3d.background=null;
+  scene3d.fog=null;
   camera3d=new THREE.PerspectiveCamera(42,1,1,15000);
   scene3d.add(new THREE.AmbientLight(0xffffff,0.65));
   var sun=new THREE.DirectionalLight(0xfff8f0,0.9);
@@ -712,7 +713,12 @@ function generatePalletSVG(){
 function generatePDF3d(){
   var nome=document.getElementById('nome').value||'Bancale';
   var today=new Date().toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'});
-  var svgImg=generatePalletSVG();
+  renderer3d.setClearColor(0x000000,0);
+  scene3d.background=null;
+  renderer3d.render(scene3d,camera3d);
+  var svgImg='<img src="'+canvas3d.toDataURL('image/png')+'" style="display:block;width:100%;height:auto;max-height:420px;object-fit:contain;">';
+  renderer3d.setClearColor(0xe8e4de,1);
+  scene3d.background=new THREE.Color(0xe8e4de);
 
   // Tabella livelli 3D
   var layerRows=layers.map(function(ld){
@@ -771,9 +777,15 @@ function generatePDF3d(){
 function generatePDF(){
   const nome=document.getElementById('nome').value||'Bancale senza nome';
   const today=new Date().toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'});
-
-  // Genera SVG isometrico del bancale — funziona sempre senza canvas
-  var img3d=generatePalletSVG();
+  var img3d="";
+  if(typeof renderer3d!=="undefined"){
+    renderer3d.setClearColor(0x000000,0);
+    scene3d.background=null;
+    renderer3d.render(scene3d,camera3d);
+    img3d='<img src="'+canvas3d.toDataURL("image/png")+'" style="display:block;width:100%;height:auto;max-height:340px;object-fit:contain;">';
+    renderer3d.setClearColor(0xe8e4de,1);
+    scene3d.background=new THREE.Color(0xe8e4de);
+  } else { img3d=generatePalletSVG(); }
 
   let woodCost=0,totalVol=0;
   const levelRows=levelDefs.map(ld=>{
